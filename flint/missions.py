@@ -142,7 +142,7 @@ class GF_NPC:
     righthand: Optional[str] = None
     individual_name: int
     affiliation: str
-    voice: str
+    voice: Optional[str] = None
     misn: Tuple[str, float, float] = []
     room: Optional[str] = None
     bribe: List[Tuple[str, int, int]] = []
