@@ -184,7 +184,7 @@ def parse(path: str, external_strid_offset: int = 0) -> Dict[int, str]:
                 data = ResourceDataEntry(
                     f.read(16)
                 )  # could also get codepage int here ?
-                f.seek(data.DataRVA)
+                #f.seek(data.DataRVA)
 
                 if resource_type == RT_STRING:
                     resources.update(read_string_table())
