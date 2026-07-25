@@ -24,7 +24,7 @@ def rdl_to_html(rdl: str) -> str:
     """Translate RDL to HTML. Does not implement fonts. Heavily based on the Librelancer implementation:
     https://github.com/Librelancer/Librelancer/blob/main/src/LibreLancer/Infocards/RDLParse.cs"""
     def get_color(color: str) -> int:
-        """Returns the HTML color code for the given RDL color"""
+        """Returns the little-endian RGB integer for the given RDL color"""
         color = color.strip()
         if color in RDL_NAMED_COLORS:
             return RDL_NAMED_COLORS.get(color)
@@ -50,7 +50,7 @@ def rdl_to_html(rdl: str) -> str:
         return int(color)
 
     def parse_text_render_attribute(attrib: dict[str, str]) -> dict[str, str | bool]:
-        """Converts RDL tag attributes to HTML."""
+        """Parses RDL tag attributes."""
         attrib = {x.upper(): y for x, y in attrib.items()}
         _data = 0
         _mask = 0
@@ -175,9 +175,9 @@ def rdl_to_html(rdl: str) -> str:
             node.tag = "span"
             style_parts = []
             if attributes["color"]:
-                style_parts(f"color: {attributes['color']};")
+                style_parts.append(f"color: {attributes['color']};")
             elif style_state["color"]:
-                style_parts(f"color: {style_state['color']};")
+                style_parts.append(f"color: {style_state['color']};")
             if attributes["bold"] or style_state["bold"]:
                 style_parts.append("font-weight: bold;")
             if attributes["italic"] or style_state["italic"]:
