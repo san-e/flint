@@ -6,13 +6,16 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """
 
+from __future__ import annotations
+
+from flint.entities import Commodity
 from typing import Tuple, Optional, Union
 
-from dataclassy import dataclass
+from dataclassy import dataclass, Internal
 from collections import defaultdict
 
 from . import Entity, EntitySet, Equipment
-from .. import maps, interface, routines, paths
+from .. import maps, interface, routines, paths, cached
 from ..formats import ini
 
 
@@ -193,6 +196,53 @@ class Zone(Solar):
 
     size: Union[int, Tuple[int, int], Tuple[int, int, int]]
     shape: str  # one of: sphere, ring, box, ellipsoid
+    asteroids_: Internal[set[Asteroids]] = set()
+    nebula_: Internal[set[Nebula]] = set()
+
+    def asteroids(self) -> set[Asteroids]:
+        return self.asteroids_
+
+    def nebulae(self) -> set[Nebula]:
+        return self.nebula_
+
+    def mineable_commodities(self) -> EntitySet[Commodity]:
+        result = set()
+        for asteroid in self.asteroids():
+            for commodity in asteroid.mineable_commodities():
+                result.add(commodity)
+        return EntitySet(result)
+
+@dataclass(frozen=True)
+class Asteroids():
+    file: str # path relative to DATA
+    zone: str # references zone defined in system ini
+
+    def absolute_path(self) -> str:
+        """Gets the absolute path of the asteroids file."""
+        return paths.construct_path(f"DATA/{self.file}")
+
+    @cached
+    def mineable_commodities(self) -> EntitySet[Commodity]:
+        contents = ini.parse(self.absolute_path())
+        result = set()
+        for kind, attributes in contents:
+            if kind == 'lootablezone':
+                if attributes.get('asteroid_loot_commodity'):
+                    result.add(routines.get_commodities()[attributes['asteroid_loot_commodity']])
+                if attributes.get('dynamic_loot_commodity'):
+                    result.add(routines.get_commodities()[attributes['dynamic_loot_commodity']])
+
+        return EntitySet(result)
+
+@dataclass(frozen=True)
+class Nebula():
+    file: str # path relative to DATA
+    zone: str # references zone defined in system ini
+
+    def absolute_path(self):
+        """Gets the absolute path of the nebula file."""
+        return paths.construct_path(f"DATA/{self.file}")
+
 
 
 class Loadout(Entity):

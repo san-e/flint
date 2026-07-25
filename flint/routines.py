@@ -8,6 +8,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 This file contains routines for parsing specific sets of information
 from the game files. All exported functions return EntitySets.
 """
+from flint.entities import Asteroids, Nebula
 from typing import Dict, Union
 from collections import defaultdict
 import warnings
@@ -154,11 +155,20 @@ def get_wrecks() -> EntitySet[Wreck]:
 def get_system_contents(system: System, raw = False) -> EntitySet[Solar]:
     """All solars (objects and zones) in a given system."""
     result = []
+    asteroids: list[Asteroids] = []
+    nebulae: list[Nebula] = []
     contents = ini.parse(system.definition_path())
     if raw:
         return contents
     # categorise objects based on their keys
     for solar_type, attributes in contents:
+        if solar_type == 'asteroids':
+            a = attributes
+            asteroids.append(Asteroids(**a))
+        elif solar_type == 'nebula':
+            n = attributes
+            nebulae.append(Nebula(**n))
+
         if 'ids_name' not in attributes:
             pass
         try:
@@ -195,7 +205,21 @@ def get_system_contents(system: System, raw = False) -> EntitySet[Solar]:
             z = attributes
             result.append(Zone(**z))
 
-    return EntitySet(result)
+    res = EntitySet(result)
+    zones = res.of_type(Zone)
+    for asteroid in asteroids:
+        zone = zones.get(asteroid.zone)
+        if zone is None:
+            continue
+        zone.asteroids_.add(asteroid)
+
+    for nebula in nebulae:
+        zone = zones.get(nebula.zone)
+        if zone is None:
+            continue
+        zone.nebula_.add(nebula)
+
+    return res
 
 
 @cached

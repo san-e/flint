@@ -4,6 +4,7 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """
+from __future__ import annotations
 from typing import Dict, List, Tuple, Optional, Set
 from collections import defaultdict
 import os
@@ -17,6 +18,7 @@ from .solars import BaseSolar, Wreck
 from .equipment import Equipment, Commodity
 from .ship import Ship
 from .goods import EquipmentGood, CommodityGood, ShipPackage
+
 
 
 class System(Entity):
@@ -60,6 +62,12 @@ class System(Entity):
         """All stars in this system."""
         return self.contents().of_type(Star)
 
+    def asteroids(self) -> EntitySet[Asteroids]:
+        return self.contents().of_type(Asteroids)
+
+    def nebulae(self) -> EntitySet[Nebula]:
+        return self.contents().of_type(Nebula)
+
     def connections(self) -> 'Dict[Jump, System]':
         """The connections this system has to other systems."""
         return {c: c.destination_system() for c in self.contents().of_type(Jump)}
@@ -86,6 +94,14 @@ class System(Entity):
         *_, rest = self.infocard('rdl').partition('<JUST loc="center"/><TEXT>')
         region, *_ = rest.partition('</TEXT>')
         return region.title() if region else 'Unknown'
+
+    def mineable_commodities(self) -> EntitySet[Commodity]:
+        result = set()
+        for zone in self.zones():
+            for asteroid in zone.asteroids():
+                for commodity in asteroid.mineable_commodities():
+                    result.add(commodity)
+        return EntitySet(result)
 
 
 class Base(Entity):
@@ -211,7 +227,6 @@ class Base(Entity):
     def sells_ships(self) -> Dict[Ship, int]:
         """The ships represented by the goods this base sells, mapped to their cost."""
         return {good.ship(): good.cost() for good in self.sells() if isinstance(good, ShipPackage)}
-
 
 class Faction(Entity):
     """A faction, also known as a group, is an organisation in the Freelancer universe, possibly owning bases or
