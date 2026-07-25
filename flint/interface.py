@@ -11,23 +11,191 @@ Interface-related functions, such as routines for translating RDL.
 import xml.etree.ElementTree as xml
 from . import paths, cached
 from .formats import ini
+import re
 
 
 def strip_html(text):
-    """Remove html tags from a string"""
-    import re
-
+    """Remove HTML tags from a string"""
     clean = re.compile("<.*?>")
     return re.sub(clean, "", text)
 
 
 def rdl_to_html(rdl: str) -> str:
-    """Translate RDL to HTML. Currently this uses a crude lookup table. In future I want to replace this with
-    proper interpretation of the XML."""
-    result = rdl[-1] if isinstance(rdl, list) else rdl
-    for rdl_tag, html_tag in RDL_TO_HTML.items():
-        result = result.replace(rdl_tag, html_tag)
-    return result
+    """Translate RDL to HTML. Does not implement fonts. Heavily based on the Librelancer implementation:
+    https://github.com/Librelancer/Librelancer/blob/main/src/LibreLancer/Infocards/RDLParse.cs"""
+    def get_color(color: str) -> int:
+        """Returns the HTML color code for the given RDL color"""
+        color = color.strip()
+        if color in RDL_NAMED_COLORS:
+            return RDL_NAMED_COLORS.get(color)
+        if color.startswith("0x"):
+            return int(color, 16)
+        if color.startswith('#'):
+            if len(color) == 4:
+                # turns a string of the form #rgb into #rrggbb
+                r = int(color[1], 16)
+                g = int(color[2], 16)
+                b = int(color[3], 16)
+                r = ((r << 4) | r)
+                g = ((g << 4) | g)
+                b = ((b << 4) | b)
+                return (b << 24) | (g << 16) | (r << 8)
+            elif len(color) == 7:
+                # expects #rrggbb
+                r = int(color[1:3], 16)
+                g = int(color[3:5], 16)
+                b = int(color[5:7], 16)
+                return (b << 24) | (g << 16) | (r << 8)
+            raise ValueError("Invalid color: " + color)
+        return int(color)
+
+    def parse_text_render_attribute(attrib: dict[str, str]) -> dict[str, str | bool]:
+        """Converts RDL tag attributes to HTML."""
+        attrib = {x.upper(): y for x, y in attrib.items()}
+        _data = 0
+        _mask = 0
+        _def = 0
+
+        if "DATA" in attrib:
+            _data = int(attrib["DATA"], 16)
+        if "MASK" in attrib:
+            _mask = int(attrib["MASK"], 16)
+        if "DEF" in attrib:
+            _def = int(attrib["DEF"], 16)
+        if "COLOR" in attrib:
+            _mask |= RDL_TRA_COLOR
+            if attrib["COLOR"].lower() == "default":
+                _def |= RDL_TRA_COLOR
+            else:
+                _data &= ~RDL_TRA_COLOR
+                _data |= get_color(attrib["COLOR"])
+        if "FONT" in attrib:
+            _mask |= RDL_TRA_FONT
+            if attrib["FONT"].lower() == "default":
+                _def |= RDL_TRA_FONT
+            else:
+                _data &= ~RDL_TRA_FONT
+                _data |= int(attrib["FONT"]) << 3
+
+        for attribute, flag in [("BOLD", RDL_TRA_BOLD), ("ITALIC", RDL_TRA_ITALIC), ("UNDERLINE", RDL_TRA_UNDERLINE)]:
+            if attribute in attrib:
+                _mask |= flag
+                if attrib[attribute].lower() == "default":
+                    _def |= flag
+                elif attrib[attribute].lower() == "true":
+                    _data |= flag
+                else:
+                    _data &= ~RDL_TRA_BOLD
+
+        html_attributes = {
+            "bold": False,
+            "italic": False,
+            "underline": False,
+            "color": "",
+            "font": {"name": "", "size": 0},
+        }
+
+        if (_def & RDL_TRA_BOLD) != 0:
+            html_attributes["bold"] = False
+        elif (_mask & RDL_TRA_BOLD) != 0:
+            html_attributes["bold"] = (_data & RDL_TRA_BOLD) != 0
+
+        if (_def & RDL_TRA_ITALIC) != 0:
+            html_attributes["italic"] = False
+        elif (_mask & RDL_TRA_ITALIC) != 0:
+            html_attributes["italic"] = (_data & RDL_TRA_ITALIC) != 0
+
+        if (_def & RDL_TRA_UNDERLINE) != 0:
+            html_attributes["underline"] = False
+        elif (_mask & RDL_TRA_UNDERLINE) != 0:
+            html_attributes["underline"] = (_data & RDL_TRA_UNDERLINE) != 0
+
+        if (_def & RDL_TRA_COLOR) != 0:
+            html_attributes["color"] = "";
+        elif (_mask & RDL_TRA_COLOR) != 0:
+            bytes = (_data & RDL_TRA_COLOR).to_bytes(4, byteorder="little")
+            html_attributes["color"] = f"#{bytes[1]:02x}{bytes[2]:02x}{bytes[3]:02x}"
+
+        return html_attributes
+
+    def remove_element(el: xml.Element, parent_map: dict[xml.Element, xml.Element]) -> None:
+        """Removes an element from the tree while preserving its contents"""
+        parent = parent_map.get(el)
+        if parent is None:
+            return # dont delete the root element
+        idx = list(parent).index(el)
+        text_target_idx = idx - 1
+        for child in el:
+            parent.insert(idx, child)
+            idx += 1
+        parent.remove(el)
+
+        if el.text:
+            target = parent if text_target_idx == -1 else parent[text_target_idx]
+            if target.text:
+                target.text += el.text
+            else:
+                target.text = el.text
+
+    if not rdl:
+        return rdl
+
+    try:
+        root = xml.fromstring(rdl)
+    except xml.ParseError:
+        return rdl
+
+    root.tag = "div"
+
+    style_state = {"color": "", "bold": False, "italic": False, "underline": False}
+    current_elements = []
+
+    remove_list = []
+    for node in list(root.iter()):
+        if node == root:
+            continue
+        if node.tag.lower() in RDL_IGNORED_TAGS:
+            remove_list.append(node)
+            continue
+
+        attributes = parse_text_render_attribute(node.attrib)
+        attrib_copy = node.attrib.copy()
+        node.attrib = {}
+        if node.tag.lower() == "tra":
+            style_state = attributes
+            remove_list.append(node)
+            continue
+
+        if node.tag.lower() == "para":
+            node.tag = "p"
+        if node.tag.lower() == "just":
+            node.tag = "p"
+            node.attrib["align"] = attrib_copy.get("loc", "left")
+        if node.tag.lower() == "text":
+            node.tag = "span"
+            style_parts = []
+            if attributes["color"]:
+                style_parts(f"color: {attributes['color']};")
+            elif style_state["color"]:
+                style_parts(f"color: {style_state['color']};")
+            if attributes["bold"] or style_state["bold"]:
+                style_parts.append("font-weight: bold;")
+            if attributes["italic"] or style_state["italic"]:
+                style_parts.append("font-style: italic;")
+            if attributes["underline"] or style_state["underline"]:
+                style_parts.append("text-decoration: underline;")
+            node.attrib["style"] = " ".join(style_parts)
+
+            if not node.attrib.get("style"):
+                remove_list.append(node)
+
+    # since XML elements don't have a parent pointer we need to construct this map first
+    parent_map = {child: parent for parent in root.iter() for child in parent}
+    for node in remove_list:
+        remove_element(node, parent_map)
+
+    return xml.tostring(root, encoding="unicode")
+
 
 
 def rdl_to_plaintext(rdl: str) -> str:
@@ -62,6 +230,24 @@ def get_constants() -> dict:
     path = paths.inis["constants"]
     return dict(ini.parse(path))
 
+RDL_NAMED_COLORS = {
+    "fuchsia": 0xC2008800,
+    "gray": 0x80808000,
+    "blue": 0xE0484800,
+    "green": 0x13BF3B00,
+    "aqua": 0xE0C38700,
+    "red": 0x1D1DBF00,
+    "yellow": 0x52EAF500,
+    "white": 0xFFFFFF00
+}
+RDL_IGNORED_TAGS = {
+    "rdl", "push", "pop"
+}
+RDL_TRA_BOLD = 0x01
+RDL_TRA_ITALIC = 0x02
+RDL_TRA_UNDERLINE = 0x04
+RDL_TRA_FONT = 0xF8
+RDL_TRA_COLOR = 0xFFFFFF00
 
 # A lookup table mapping RDL (Render Display List) tags to HTML(4). Freelancer, to my eternal horror, uses these for
 # formatting for strings inside these resource DLLs. Based on work by adoxa and cshake.
