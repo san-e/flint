@@ -24,6 +24,7 @@ import concurrent.futures
 import itertools
 import warnings
 import string
+import re
 
 from .. import cached
 from . import bini
@@ -96,10 +97,7 @@ def parse_file(path: str, infocard_override: bool = False):
             contents = (
                 f.read().lower() if not infocard_override else f.read()
             )  # files are case insensitive
-
-    contents.replace(
-        DELIMITER_COMMENT + SECTION_NAME_START, ""
-    )  # delete commented section markers
+    contents = re.sub(fr"(\{SECTION_NAME_START}{DELIMITER_COMMENT})|({DELIMITER_COMMENT}.*$)", "", contents, flags=re.MULTILINE) # delete all comments and commented section markers
     return list(
         map(
             lambda x: parse_section(x.strip(), infocard_override),
