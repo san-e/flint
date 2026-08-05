@@ -133,9 +133,9 @@ def rdl_to_html(rdl: str) -> str:
         if el.text:
             target = parent if text_target_idx == -1 else parent[text_target_idx]
             if target.text:
-                target.text += el.text
+                target.tail += el.text
             else:
-                target.text = el.text
+                target.tail = el.text
 
     if not rdl:
         return rdl
@@ -167,11 +167,13 @@ def rdl_to_html(rdl: str) -> str:
             continue
 
         if node.tag.lower() == "para":
-            node.tag = "p"
-        if node.tag.lower() == "just":
+            node.tag = "br"
+            node.attrib = {}
+        elif node.tag.lower() == "just":
             node.tag = "p"
             node.attrib["align"] = attrib_copy.get("loc", "left")
-        if node.tag.lower() == "text":
+            node.attrib["style"] = "margin: 0; padding: 0;"
+        elif node.tag.lower() == "text":
             node.tag = "span"
             style_parts = []
             if attributes["color"]:
@@ -200,7 +202,7 @@ def rdl_to_html(rdl: str) -> str:
 
 def rdl_to_plaintext(rdl: str) -> str:
     """Translate RDL to plaintext, stripping all tags and replacing <PARA/> with a newline."""
-    return strip_html(rdl_to_html(rdl).replace("<p>", "\n")).replace("&nbsp;", "")
+    return strip_html(re.sub(r"<[^\/]*?p[^>]*?>", "\n", rdl_to_html(rdl))).replace("&nbsp;", "").strip()
     rdl = rdl.replace("<PARA/>", "\n").replace("</PARA>", "")
     tree = xml.fromstring(rdl)
     return xml.tostring(tree, encoding="unicode", method="text")

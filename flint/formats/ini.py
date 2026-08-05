@@ -17,7 +17,6 @@ This file is intended to be the main interface for accessing INI
 *and* BINI functions, as it contains higher-level functions as well
 as logic for checking whether a .ini file is an INI or a BINI.
 """
-
 from typing import Union, List, Dict, Any, Tuple
 from collections import defaultdict
 import concurrent.futures
@@ -25,6 +24,7 @@ import itertools
 import warnings
 import string
 import re
+import sys
 
 from .. import cached
 from . import bini
@@ -49,7 +49,7 @@ def sections(
 def parse(
     paths: Union[str, Tuple[str]],
     fold_values=True,
-    infocard_override: bool = False,
+    discovery_config: bool = False,
 ) -> List[Tuple[str, Dict[str, Any]]]:
     """Parse an INI file, or a collection of INIs, to a list of tuples of the form (section_name, section_contents),
     where section_contents is a dict of the entries in that section. If fold_values is true (the default), the
@@ -60,7 +60,7 @@ def parse(
     with concurrent.futures.ThreadPoolExecutor() as executor:
         sections_ = itertools.chain(
             *executor.map(
-                lambda path: parse_file(path, infocard_override),
+                lambda path: parse_file(path, discovery_config),
                 paths,
             )
         )
@@ -82,7 +82,7 @@ def group(paths: Union[str, Tuple[str]], fold_sections=True, fold_values=True):
     ]
 
 
-def parse_file(path: str, infocard_override: bool = False):
+def parse_file(path: str, discovery_config: bool = False):
     """Takes a path to an INI or BINI file and outputs a list of tuples containing a section name and a list of tuples
     of entry/value pairs."""
     if bini.is_bini(path):
@@ -90,27 +90,27 @@ def parse_file(path: str, infocard_override: bool = False):
     try:
         with open(path, encoding="windows-1252") as f:
             contents = (
-                f.read().lower() if not infocard_override else f.read()
+                f.read().lower() if not discovery_config else f.read()
             )  # files are case insensitive
     except:
         with open(path, encoding="utf-8") as f:
             contents = (
-                f.read().lower() if not infocard_override else f.read()
+                f.read().lower() if not discovery_config else f.read()
             )  # files are case insensitive
     contents = re.sub(fr"(\{SECTION_NAME_START}{DELIMITER_COMMENT})|({DELIMITER_COMMENT}.*$)", "", contents, flags=re.MULTILINE) # delete all comments and commented section markers
     return list(
         map(
-            lambda x: parse_section(x.strip(), infocard_override),
+            lambda x: parse_section(x.strip(), discovery_config),
             (
                 contents.split(SECTION_NAME_START)
-                if not infocard_override
+                if not discovery_config
                 else contents.split("\n" + SECTION_NAME_START)
             ),
         )
     )
 
 
-def parse_section(section: str, infocard_override: bool = False):
+def parse_section(section: str, discovery_config: bool = False):
     """Takes a raw section string (minus the [) and outputs a tuple containing the section name and a list of tuples
     of entry/value pairs. If the section is invalid, an empty tuple will be returned."""
     section_name, delimiter, entries = section.partition(SECTION_NAME_END)
@@ -118,7 +118,7 @@ def parse_section(section: str, infocard_override: bool = False):
         return ()
     try:
         return section_name, list(
-            map(lambda x: parse_entry(x, infocard_override), entries.splitlines())
+            map(lambda x: parse_entry(x, discovery_config), entries.splitlines())
         )
     except (
         ValueError
@@ -127,33 +127,34 @@ def parse_section(section: str, infocard_override: bool = False):
         return ()
 
 
-def parse_entry(entry: str, infocard_override: bool = False):
+def parse_entry(entry: str, discovery_config: bool = False):
     """Takes an entry string consisting of a delimiter separated key/value pair and outputs a tuple of the
     name and value. If the entry is invalid, an empty tuple will be returned."""
     entry = entry.split(DELIMITER_COMMENT, 1)[0]  # remove comments
     key, delimiter, value = entry.partition(DELIMITER_KEY_VALUE)
     if not delimiter:  # if this isn't a valid entry line after all
         return ()
-    return key.strip(), parse_value(value, infocard_override)
+    return key.strip(), parse_value(value, discovery_config)
 
 
-def parse_value(entry_value: str, infocard_override: bool = False) -> Union[Any, Tuple]:
+def parse_value(entry_value: str, discovery_config: bool = False) -> Union[Any, Tuple]:
     """Parse an entry value (consisting either of a string, int or float or a tuple of such) using and return it as a
     Python object."""
     return (
-        tuple(map(lambda x: auto_cast(x, infocard_override), entry_value.split(",")))
-        if "," in entry_value and not infocard_override
-        else auto_cast(entry_value, infocard_override)
+        tuple(map(lambda x: auto_cast(x, discovery_config), entry_value.split(",")))
+        if "," in entry_value and not discovery_config
+        else auto_cast(entry_value, discovery_config)
     )
 
 
-def auto_cast(value: str, infocard_override: bool = False) -> Any:
+def auto_cast(value: str, discovery_config: bool = False) -> Any:
     """Interpret and coerce a string value to a Python type. If the value cannot be interpreted as a valid Python type,
     a `ValueError` will be raised."""
     value = value.strip()
-    if infocard_override:
+    if discovery_config:
         return value
-
+    if value == "infinity":
+        return sys.maxsize
     if not (value[:1] == "-" or value[:1].isdigit()):  # if not a number
         if value == "true":
             return True

@@ -21,10 +21,13 @@ Gun could be Missile and Turret, but instead you should determine if a
 Gun instance is one of these by checking its attributes.
 """
 
+from __future__ import annotations
+
+from flint import cached
 from typing import Dict, Optional, Tuple, cast
 import math
 
-from . import Entity
+from . import Entity, EntitySet
 from .. import routines, interface
 from ..formats import ini
 from PIL import Image
@@ -44,13 +47,15 @@ class Equipment(Entity):
         image = Image.open(BytesIO(self.icon()))
         image.show()
 
-    def good(self) -> Optional["Good"]:
+    @cached
+    def good(self) -> Optional[Good]:
         """The good entity for this piece of equipment."""
         return (
             routines.get_goods().of_type(EquipmentGood).unique(equipment=self.nickname)
         )
 
-    def sold_at(self) -> Dict["Base", int]:
+    @cached
+    def sold_at(self) -> Dict[Base, int]:
         """A dict of bases that sell this good of the form {base: price}. All bases buy equipment."""
         return self.good().sold_at() if self.good() else {}
 
@@ -62,6 +67,15 @@ class Equipment(Entity):
         """Whether the equipment is valid, i.e. it defines a good. Note that some specialised equipment subtypes
         do not have goods, rendering this method meaningless for them."""
         return self.good() is not None
+
+    @cached
+    def wrecks(self) -> EntitySet[Wreck]:
+        """The wrecks this piece of equipment can be found in"""
+        result = set()
+        for wreck in routines.get_wrecks():
+            if self in wreck.loot().keys():
+                result.add(wreck)
+        return EntitySet(result)
 
 
 class Mountable(Equipment):

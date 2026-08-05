@@ -75,7 +75,7 @@ def get_news() -> Dict[str, List['NewsItem']]:
 
     return dict(result)
 
-@dataclass
+@dataclass(frozen=True)
 class NewsItem:
     """A news item, found in news.ini."""
     category: int

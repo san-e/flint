@@ -80,7 +80,7 @@ class Ship(Entity):
     def infocard(self, markup="html") -> str:
         """I have no idea why the order these are displayed in is not ascending, but anyway."""
         lookup = self._markup_formats[markup]
-        return "<p>".join(map(lookup, (self.ids_info1, self.ids_info)))
+        return "\n".join(map(lookup, (self.ids_info1, self.ids_info)))
 
     def type(self) -> str:
         """The name of the type (class) of this ship."""

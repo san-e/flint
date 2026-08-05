@@ -110,7 +110,7 @@ class Wreck(Object):
         """This wreck's loadout entity"""
         return routines.get_loadouts()[self.loadout]
 
-    def loot(self):
+    def loot(self) -> EntitySet[Equipment]:
         return self.loadout_().loot()
 
 
@@ -250,7 +250,8 @@ class Loadout(Entity):
     archetype: Optional[str] = None
     cargo: tuple((str, int)) = None  # (nickname, amount)
 
-    def loot(self) -> EntitySet["Equipment"]:
+    @cached
+    def loot(self) -> dict[Equipment, int]: # maps equipment to amount
         result = []
         if type(self.cargo) is not list and self.cargo:
             self.cargo = [self.cargo]
@@ -268,7 +269,7 @@ class Loadout(Entity):
             if [i[0] for i in result].count(e) > 1:
                 default[e] = [i[0] for i in result].count(e)
 
-        return [[x, y] for x, y in dict(default).items()]
+        return default
 
 
 from .universe import Base, Faction, System

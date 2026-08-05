@@ -8,6 +8,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 This namespace contains definitions for entities found within
 Freelancer.
 """
+from __future__ import annotations
 from typing import TypeVar, Iterable, Generic, Type, Optional, Dict, Union
 from collections.abc import Mapping, KeysView, ItemsView, ValuesView
 import operator
@@ -75,8 +76,10 @@ class EntitySet(Mapping, Generic[T]):
     """An immutable collection of entities, indexed by nickname."""
     pprint.sorted = lambda v, key=None: v  # patch pprint's sorted implementation to print in insertion order
 
-    def __init__(self, entities: Union[Iterable[T], Dict[str, T]]):
-        if type(entities) is dict:
+    def __init__(self, entities: Union[Iterable[T], Dict[str, T]] = None):
+        if entities is None:
+            self._map = dict()
+        elif type(entities) is dict:
             self._map = entities
         else:
             self._map = {e.nickname: e for e in entities}
@@ -96,7 +99,9 @@ class EntitySet(Mapping, Generic[T]):
 
     def __contains__(self, item):
         """Membership checking is as per hash table."""
-        return type(item) is str and item in self._map
+        if isinstance(item, Entity):
+            return item.nickname in self._map
+        return isinstance(item, str) and item in self._map
 
     def __len__(self):
         """Length is the size of the map."""
@@ -112,13 +117,13 @@ class EntitySet(Mapping, Generic[T]):
         """The set of keys is constant for an EntitySet and allows it to be hashed."""
         return hash(frozenset(self._map))
 
-    def __add__(self, other) -> 'EntitySet[T]':
+    def __add__(self, other: EntitySet[T]) -> EntitySet[T]:
         """Two EntitySets can be added together to create a new EntitySet."""
         if type(other) is not type(self):
             raise TypeError(f'Can only concatenate EntitySet (not {type(other)}) with EntitySet.')
         return EntitySet({e for e in self} | {e for e in other})
 
-    def __iadd__(self, other) -> 'EntitySet[T]':
+    def __iadd__(self, other: EntitySet[T]) -> EntitySet[T]:
         """An EntitySet can be extended."""
         return self + other
 
@@ -135,16 +140,16 @@ class EntitySet(Mapping, Generic[T]):
         return self._map.values()
 
     @cached
-    def of_type(self, type_: Type[F]) -> 'EntitySet[F]':
+    def of_type(self, type_: Type[F]) -> EntitySet[F]:
         """Return a new, homogeneous EntitySet containing only Entities which are instances of the given type."""
         return EntitySet(filter(lambda e: isinstance(e, type_), self))
 
     @cached
-    def reindex(self, on: str) -> 'EntitySet[T]':
+    def reindex(self, on: str) -> EntitySet[T]:
         """Reindex this EntitySet on the field with name `on`."""
         return EntitySet({getattr(entity, on): entity for entity in self})
 
-    def where(self, op=operator.eq, **kwargs) -> 'EntitySet[T]':
+    def where(self, op=operator.eq, **kwargs) -> EntitySet[T]:
         """Return a new EntitySet containing only Entities for which the given field matches the given condition.
         Attributes and methods which do not take an argument can be used as fields.
         Usage example: `systems.where(name='New Berlin')`.
