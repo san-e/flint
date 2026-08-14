@@ -213,7 +213,7 @@ class Base(Entity):
     def market(self):
         return routines.get_markets()[self]
 
-    def sells(self) -> Dict['Good', int]:
+    def sells(self) -> Dict[Good, int]:
         """The goods this base sells, of the form {good -> price}."""
         return self.market()[True]
 

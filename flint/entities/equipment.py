@@ -437,5 +437,10 @@ class Commodity(Equipment):
         """A dict of bases that buy this commodity of the form {base: price}."""
         return self.good().bought_at()
 
+    @cached
+    def mineable_in(self):
+        """The systems in which this commodity can be mined"""
+        return EntitySet(system for system in routines.get_systems() if self in system.mineable_commodities())
+
 
 from .goods import Good, EquipmentGood
