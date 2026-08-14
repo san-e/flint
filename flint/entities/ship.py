@@ -48,6 +48,13 @@ class Ship(Entity):
         """This ship's hull entity."""
         return routines.get_goods().of_type(ShipHull).unique(ship=self.nickname)
 
+    @cached
+    def good(self) -> Optional[ShipPackage]:
+        """This ship's ShipPackage good."""
+        result = [x for x in routines.get_goods().of_type(ShipPackage) if x.ship() == self]
+        if result:
+            return result[0]
+
     def package(self) -> Optional[ShipPackage]:
         """This ship's package entity."""
         if not self.hull():
