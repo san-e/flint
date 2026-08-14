@@ -7,7 +7,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """
 
 from types import FunctionType as Function
-from typing import Dict
+from typing import Dict, TypeVar, Callable
 from functools import lru_cache
 import warnings
 
@@ -17,7 +17,8 @@ warnings.formatwarning = (
 central_cache: Dict[str, object] = dict()
 
 
-def cached(function: Function) -> object:
+F = TypeVar("F", bound=Callable[..., object])
+def cached(function: F) -> F:
     """A decorator which caches a function to the central cache."""
     wrapped = lru_cache(maxsize=None)(function)
     central_cache[f"{function.__module__}.{function.__name__}"] = wrapped
