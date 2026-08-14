@@ -81,11 +81,16 @@ class EntitySet(Mapping, Generic[T]):
             self._map = dict()
         elif type(entities) is dict:
             self._map = entities
+        elif isinstance(entities, Entity):
+            self._map = {entities.nickname: entities}
         else:
             self._map = {e.nickname: e for e in entities}
 
     def __repr__(self):
         return f'EntitySet({pprint.pformat(self._map)})'
+
+    def __copy__(self):
+        return EntitySet(self._map)
 
     def __getitem__(self, key: str) -> T:
         if type(key) is not str:
@@ -177,6 +182,11 @@ class EntitySet(Mapping, Generic[T]):
         """Return the first entity in the set, or None if it is empty. This is useful both for testing. If a query is
         expected to return exactly one result, you likely want to use unique() instead of this property."""
         return next(iter(self), None)
+
+    def add(self, entity: Entity) -> None:
+        """Add the given entity to this EntitySet"""
+        if entity is not None:
+            self._map[entity.nickname] = entity
 
 
 # exported types
