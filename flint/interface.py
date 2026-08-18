@@ -23,6 +23,16 @@ def strip_html(text):
 def rdl_to_html(rdl: str) -> str:
     """Translate RDL to HTML. Does not implement fonts. Heavily based on the Librelancer implementation:
     https://github.com/Librelancer/Librelancer/blob/main/src/LibreLancer/Infocards/RDLParse.cs"""
+    SENTINEL_ALIGNMENT = {
+        "left": chr(0xFDD0),
+        "center": chr(0xFDD1),
+        "right": chr(0xFDD2),
+    }
+    REVERSE_SENTINEL_ALIGNMENT = {
+        chr(0xFDD0): "left",
+        chr(0xFDD1): "center",
+        chr(0xFDD2): "right",
+    }
     def get_color(color: str) -> int:
         """Returns the little-endian RGB integer for the given RDL color"""
         color = color.strip()
@@ -118,24 +128,42 @@ def rdl_to_html(rdl: str) -> str:
 
         return html_attributes
 
-    def remove_element(el: xml.Element, parent_map: dict[xml.Element, xml.Element]) -> None:
+    def remove_element(
+        el: xml.Element, parent_map: dict[xml.Element, xml.Element]
+    ) -> None:
         """Removes an element from the tree while preserving its contents"""
         parent = parent_map.get(el)
         if parent is None:
-            return # dont delete the root element
-        idx = list(parent).index(el)
-        text_target_idx = idx - 1
-        for child in el:
-            parent.insert(idx, child)
-            idx += 1
-        parent.remove(el)
+            return  # don't delete the root element
 
+        idx = list(parent).index(el)
+        children = list(el)
+
+        # el.text: text before el's first child -> goes before el's new position
         if el.text:
-            target = parent if text_target_idx == -1 else parent[text_target_idx]
-            if target.text:
-                target.tail += el.text
+            if idx == 0:
+                parent.text = (parent.text or "") + el.text
             else:
-                target.tail = el.text
+                prev = parent[idx - 1]
+                prev.tail = (prev.tail or "") + el.text
+
+        # splice el's children into parent at el's old position
+        for i, child in enumerate(children):
+            parent.insert(idx + i, child)
+
+        # el.tail: text after el's closing tag -> goes after el's last child,
+        # or wherever el.text would have gone if el had no children
+        if el.tail:
+            if children:
+                last = children[-1]
+                last.tail = (last.tail or "") + el.tail
+            elif idx == 0:
+                parent.text = (parent.text or "") + el.tail
+            else:
+                prev = parent[idx - 1]
+                prev.tail = (prev.tail or "") + el.tail
+
+        parent.remove(el)
 
     if not rdl:
         return rdl
@@ -146,6 +174,7 @@ def rdl_to_html(rdl: str) -> str:
         return rdl
 
     root.tag = "div"
+    root.attrib = {"style": "text-align: left;"}
 
     style_state = {"color": "", "bold": False, "italic": False, "underline": False}
     current_elements = []
@@ -170,9 +199,8 @@ def rdl_to_html(rdl: str) -> str:
             node.tag = "br"
             node.attrib = {}
         elif node.tag.lower() == "just":
-            node.tag = "p"
-            node.attrib["align"] = attrib_copy.get("loc", "left")
-            node.attrib["style"] = "margin: 0; padding: 0;"
+            node.text = SENTINEL_ALIGNMENT[attrib_copy.get("loc")]
+            remove_list.append(node)
         elif node.tag.lower() == "text":
             node.tag = "span"
             style_parts = []
@@ -196,13 +224,27 @@ def rdl_to_html(rdl: str) -> str:
     for node in remove_list:
         remove_element(node, parent_map)
 
-    return xml.tostring(root, encoding="unicode")
+    intermediate_string = xml.tostring(root, encoding="unicode")
+    final_string = ""
+    run = [0, 0]
+    alignment_state = "left"
+    for i, char in enumerate(intermediate_string):
+        if not char in SENTINEL_ALIGNMENT.values():
+            run[1] += 1
+            continue
+        final_string += intermediate_string[run[0]:run[1]]
+        if REVERSE_SENTINEL_ALIGNMENT[char] != alignment_state:
+            final_string += f'</div><div style="text-align: {REVERSE_SENTINEL_ALIGNMENT[char]};">'
+            alignment_state = REVERSE_SENTINEL_ALIGNMENT[char]
+        run = [run[1] + 1, run[1] + 1]
+    final_string += intermediate_string[run[0] : run[1]]
 
+    return final_string
 
 
 def rdl_to_plaintext(rdl: str) -> str:
     """Translate RDL to plaintext, stripping all tags and replacing <PARA/> with a newline."""
-    return strip_html(re.sub(r"<[^\/]*?p[^>]*?>", "\n", rdl_to_html(rdl))).replace("&nbsp;", "").strip()
+    return strip_html(re.sub(r"<[^\/]*?p[^>]*?>", "\n", rdl_to_html(rdl)).replace("<br />", "\n")).replace("&nbsp;", "").strip()
     rdl = rdl.replace("<PARA/>", "\n").replace("</PARA>", "")
     tree = xml.fromstring(rdl)
     return xml.tostring(tree, encoding="unicode", method="text")

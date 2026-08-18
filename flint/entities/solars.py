@@ -37,6 +37,12 @@ class Solar(Entity):
         """The entity of the system this solar resides in."""
         return self._system
 
+    def nearby(self, radius: float) -> EntitySet[Solar]:
+        """All other solars within the given radius of this solar."""
+        all_solars = self.system().contents()
+        return EntitySet(s for s in all_solars if s is not self and self.pos.distance(s.pos) <= radius)
+
+
 
 class Object(Solar):
     """Generic class for a celestial body - a solid object in space. Objects are automatically classified into

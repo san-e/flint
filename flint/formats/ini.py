@@ -97,7 +97,8 @@ def parse_file(path: str, discovery_config: bool = False):
             contents = (
                 f.read().lower() if not discovery_config else f.read()
             )  # files are case insensitive
-    contents = re.sub(fr"(\{SECTION_NAME_START}{DELIMITER_COMMENT})|({DELIMITER_COMMENT}.*$)", "", contents, flags=re.MULTILINE) # delete all comments and commented section markers
+    contents = re.sub(fr"\{SECTION_NAME_START}{DELIMITER_COMMENT}[\s\S]*?\{SECTION_NAME_START}", SECTION_NAME_START, contents) # delete all comments and commented section markers
+    contents = re.sub(fr"{DELIMITER_COMMENT}.*$", "", contents, flags=re.MULTILINE)
     return list(
         map(
             lambda x: parse_section(x.strip(), discovery_config),

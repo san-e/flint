@@ -188,6 +188,14 @@ class EntitySet(Mapping, Generic[T]):
         if entity is not None:
             self._map[entity.nickname] = entity
 
+    @staticmethod
+    def merge(sets: Iterable[EntitySet]) -> EntitySet:
+        """Merge the given EntitySets into one."""
+        new = EntitySet()
+        for eset in sets:
+            new += eset
+        return new
+
 
 # exported types
 from .equipment import *

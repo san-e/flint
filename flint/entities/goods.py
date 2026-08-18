@@ -29,7 +29,10 @@ class Good(Entity):
 
     def icon(self) -> bytes:
         """This good's icon in TGA format."""
-        return utf.extract(self.icon_path(), 'MIP0')
+        try:
+            return utf.extract(self.icon_path(), 'MIP0')
+        except KeyError:
+            return utf.extract(self.icon_path(), "MIPS")
 
     def market(self) -> Dict[bool, Dict[Base, int]]:
         """The market for this Good, i.e. the Bases it is bought and sold on and their prices."""
