@@ -1,2 +1,3 @@
 dataclassy>=0.8
 deconstruct>0.2
+pillow
