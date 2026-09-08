@@ -11,6 +11,8 @@ Freelancer it is used to store binary assets, like textures and icons.
 
 Reference: <https://wiki.librelancer.net/utf:universal_tree_format>
 """
+from __future__ import annotations
+
 import deconstruct as c
 from . import WinStruct
 

@@ -7,6 +7,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 Interface-related functions, such as routines for translating RDL.
 """
+from __future__ import annotations
 
 import xml.etree.ElementTree as xml
 from . import paths, cached

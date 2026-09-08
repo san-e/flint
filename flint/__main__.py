@@ -12,6 +12,8 @@ e.g. `python -i interactive.py "<freelancer_dir>"`.
 If running in PyCharm, ensure "Emulate terminal in output console"
 is enabled in the run/debug configuration.
 """
+from __future__ import annotations
+
 import argparse
 import os
 import subprocess

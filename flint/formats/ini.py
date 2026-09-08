@@ -17,6 +17,8 @@ This file is intended to be the main interface for accessing INI
 *and* BINI functions, as it contains higher-level functions as well
 as logic for checking whether a .ini file is an INI or a BINI.
 """
+from __future__ import annotations
+
 from typing import Union, List, Dict, Any, Tuple
 from collections import defaultdict
 import concurrent.futures

@@ -10,6 +10,7 @@ well as the logic that Freelancer uses to map those resources to
 internal IDs. Additionally it implements conversion from RDL (used
 for rich-text strings) to HTML.
 """
+from __future__ import annotations
 
 from typing import Dict
 from os import SEEK_CUR

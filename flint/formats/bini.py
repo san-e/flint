@@ -9,6 +9,8 @@ This file implements a reader for Freelancer's "BINI" (binary INI)
 format. Thanks to Bas Westerbaan for providing excellent
 documentation available here: <http://blog.w-nz.com/uploads/bini.pdf>.
 """
+from __future__ import annotations
+
 from typing import Dict, List
 from collections import defaultdict
 from struct import unpack
