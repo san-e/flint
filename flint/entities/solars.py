@@ -43,7 +43,6 @@ class Solar(Entity):
         return EntitySet(s for s in all_solars if s is not self and self.pos.distance(s.pos) <= radius)
 
 
-
 class Object(Solar):
     """Generic class for a celestial body - a solid object in space. Objects are automatically classified into
     subclasses in `routines.get_system_contents`."""
@@ -71,6 +70,16 @@ class Object(Solar):
                 return []
         except KeyError:
             return []
+
+    def children(self) -> EntitySet[Object]:
+        result: set[Object] = set()
+        for s in self.system().contents():
+            if not isinstance(s, Object):
+                continue
+            if self.nickname == s.parent:
+                result.add(s)
+        return EntitySet(result)
+
 
 
 class Jump(Object):
