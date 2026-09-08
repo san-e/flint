@@ -8,6 +8,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 This directory contains functions to read the file formats used by
 Freelancer.
 """
+from __future__ import annotations
+
 import deconstruct as c
 
 

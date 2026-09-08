@@ -5,6 +5,8 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """
+from __future__ import annotations
+
 from typing import Tuple, List, Optional, Dict
 import os
 import math
@@ -24,6 +26,7 @@ LOG_OF_E = math.log10(math.e)  # used to approximate angular acceleration curve
 
 class Ship(Entity):
     """A starship with a cargo bay and possibly hardpoints for weapons."""
+
     ids_info1: Optional[int] = None  # ship description (ids_info stores statistics)
     ids_info2: Optional[int] = None  # extra stat names list
     ids_info3: Optional[int] = None  # extra stat values list
@@ -39,19 +42,29 @@ class Ship(Entity):
     angular_drag: Tuple[float, float, float]
     rotation_inertia: Tuple[float, float, float]
     hp_type: List[Tuple[str, ...]] = []
-    material_library: Optional[str] = None
+    material_library: Optional[List[str]] = None
+    da_archetype: Optional[str] = None
 
     def hull(self) -> Optional[ShipHull]:
         """This ship's hull entity."""
         return routines.get_goods().of_type(ShipHull).unique(ship=self.nickname)
 
+    @cached
+    def good(self) -> Optional[ShipPackage]:
+        """This ship's ShipPackage good."""
+        result = [x for x in routines.get_goods().of_type(ShipPackage) if x.ship() == self]
+        if result:
+            return result[0]
+
     def package(self) -> Optional[ShipPackage]:
         """This ship's package entity."""
         if not self.hull():
             return None
-        return routines.get_goods().of_type(ShipPackage).unique(hull=self.hull().nickname)
+        return (
+            routines.get_goods().of_type(ShipPackage).unique(hull=self.hull().nickname)
+        )
 
-    def sold_at(self) -> EntitySet['Base']:
+    def sold_at(self) -> EntitySet["Base"]:
         """A list of bases which sell this ship."""
         if not self.package():
             return EntitySet([])
@@ -72,10 +85,10 @@ class Ship(Entity):
         image = Image.open(BytesIO(self.icon()))
         image.show()
 
-    def infocard(self, markup='html') -> str:
+    def infocard(self, markup="html") -> str:
         """I have no idea why the order these are displayed in is not ascending, but anyway."""
         lookup = self._markup_formats[markup]
-        return '<p>'.join(map(lookup, (self.ids_info1, self.ids_info)))
+        return "\n".join(map(lookup, (self.ids_info1, self.ids_info)))
 
     def type(self) -> str:
         """The name of the type (class) of this ship."""
@@ -122,7 +135,7 @@ class Ship(Entity):
         """The maximum speed of this ship for a given force, in m/s."""
         return force / self.total_linear_drag()
 
-    def thrust_speed(self, thrust_force = 72000) -> float:
+    def thrust_speed(self, thrust_force=72000) -> float:
         """The maximum thrust speed of this ship for a given thrust force, in m/s."""
         engine = self.engine()
         force = thrust_force + engine.max_force if engine else thrust_force
@@ -145,36 +158,72 @@ class Ship(Entity):
         """The cruise speed of this ship, either defined in constants.ini or under "cruise_speed" in the engine block"""
         return self.engine().cruise_speed_()
 
-    def hardpoints(self) -> Dict[str, List['Hardpoint']]:
+    def hardpoints(self) -> Dict[str, List["Hardpoint"]]:
         """A mapping of this ship's hardpoints of the form
-        {hardpoint nickname -> union of weapon classes that can be mounted on this hardpoint}."""
+        {hardpoint nickname -> union of weapon classes that can be mounted on this hardpoint}.
+        """
         result = {}
         for hp_class, *hardpoints in self.hp_type:
             for hp in hardpoints:
                 result.setdefault(hp, []).append(Hardpoint(hp_class))
         return result
 
-    def materials(self) -> list:
+    def materials(self) -> List[str]:
         """Paths to this ships material files"""
-        materials = self.material_library if type(self.material_library) == list else [materials]
-        return [paths.construct_path("data/" + path) for path in materials]
+        materials = (
+            self.material_library
+            if type(self.material_library) == list
+            else [self.material_library]
+        )
+        try:
+            return [paths.construct_path("data/" + path) for path in materials]
+        except:
+            return []
+
+    def model(self) -> str:
+        return paths.construct_path("data/" + self.da_archetype)
 
     @staticmethod
     @cached
     def _ship_classes() -> List[str]:
+        return [
+            "Light Fighter",
+            "Heavy Fighter",
+            "Freighter",
+            "Very Heavy Fighter",
+            "Bomber",
+            "Super Heavy Fighter",
+            "Transport",
+            "Train",
+            "Heavy Transport",
+            "Super Train",
+            "Liner",
+            "Gunboat",
+            "Frigate",
+            "Cruiser",
+            "Heavy Miner",
+            "Battlecruiser",
+            "Battleship",
+            "Carrier",
+            "Dreadnought",
+            "Repair Ship",
+        ]
+
         """Construct an array of ship type codes to their display names."""
         # vanilla classes: Light Fighter - VHF
         result = list(map(dll.lookup, range(923, 927)))
 
         # further classes can be provided by mods using adoxa's shipclass plugin
-        ship_class = paths.construct_path('EXE/shipclass.dll')
+        ship_class = paths.construct_path("EXE/shipclass.dll")
         if os.path.exists(ship_class):
             result.extend(dll.parse(ship_class, 0).values())
 
         return result
 
+
 class NPCShip(Entity):
     """Ship defined in npcships.ini"""
+
     loadout: str
     level: str
     ship_archetype: str
@@ -194,6 +243,7 @@ class NPCShip(Entity):
 class Hardpoint:
     """A ship hardpoint on which a piece of equipment can be mounted.
     Not an Entity and not exported."""
+
     nickname: str
 
     def name(self) -> str:
@@ -203,32 +253,32 @@ class Hardpoint:
     def category(self) -> str:
         """The hardpoint's category is the tab the game displays it under.
         These rules are also hardcoded."""
-        if any(n in self.nickname for n in ('gun', 'torpedo', 'mine', 'turret')):
-            return 'weapons'
-        if any(n in self.nickname for n in ('shield', 'thruster')):
-            return 'external'
-        return 'internal'
+        if any(n in self.nickname for n in ("gun", "torpedo", "mine", "turret")):
+            return "weapons"
+        if any(n in self.nickname for n in ("shield", "thruster")):
+            return "external"
+        return "internal"
 
     # add singletons
     NAME_IDS = {
-        'hp_gun': 948,
-        'hpmine01': 1522,
-        'hp_thruster': 1520,
-        'hp_torpedo': 1521,  # CD
-        'hp_torpedo_special_1': 1741,  # fighter torpedo
-        'hp_torpedo_special_2': 1742,  # bomber torpedo
-        'hp_mine_dropper': 1522,
-        'hpcm01': 1523,
-        'hp_countermeasure_dropper': 1523,
-        'hp_fighter_shield_generator': 1517,
-        'hp_elite_shield_generator': 1518,
+        "hp_gun": 948,
+        "hpmine01": 1522,
+        "hp_thruster": 1520,
+        "hp_torpedo": 1521,  # CD
+        "hp_torpedo_special_1": 1741,  # fighter torpedo
+        "hp_torpedo_special_2": 1742,  # bomber torpedo
+        "hp_mine_dropper": 1522,
+        "hpcm01": 1523,
+        "hp_countermeasure_dropper": 1523,
+        "hp_fighter_shield_generator": 1517,
+        "hp_elite_shield_generator": 1518,
     }
 
     # add ranges
     ten = list(range(10))
-    NAME_IDS.update({f'hp_fighter_shield_special_{i + 1}': i + 1700 for i in ten})
-    NAME_IDS.update({f'hp_elite_shield_special_{i + 1}': i + 1711 for i in ten})
-    NAME_IDS.update({f'hp_freighter_shield_special_{i + 1}': i + 1721 for i in ten})
-    NAME_IDS.update({f'hp_gun_special_{i + 1}': i + 946 for i in ten})
-    NAME_IDS.update({f'hp_turret_special_{i + 1}': i + 1731 for i in ten})
+    NAME_IDS.update({f"hp_fighter_shield_special_{i + 1}": i + 1700 for i in ten})
+    NAME_IDS.update({f"hp_elite_shield_special_{i + 1}": i + 1711 for i in ten})
+    NAME_IDS.update({f"hp_freighter_shield_special_{i + 1}": i + 1721 for i in ten})
+    NAME_IDS.update({f"hp_gun_special_{i + 1}": i + 946 for i in ten})
+    NAME_IDS.update({f"hp_turret_special_{i + 1}": i + 1731 for i in ten})
     del ten

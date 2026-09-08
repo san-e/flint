@@ -4,6 +4,9 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """
+from __future__ import annotations
+
+from flint import cached
 from typing import Dict, List, Tuple, Optional, Set
 from collections import defaultdict
 import os
@@ -17,6 +20,7 @@ from .solars import BaseSolar, Wreck
 from .equipment import Equipment, Commodity
 from .ship import Ship
 from .goods import EquipmentGood, CommodityGood, ShipPackage
+
 
 
 class System(Entity):
@@ -60,6 +64,12 @@ class System(Entity):
         """All stars in this system."""
         return self.contents().of_type(Star)
 
+    def asteroids(self) -> EntitySet[Asteroids]:
+        return self.contents().of_type(Asteroids)
+
+    def nebulae(self) -> EntitySet[Nebula]:
+        return self.contents().of_type(Nebula)
+
     def connections(self) -> 'Dict[Jump, System]':
         """The connections this system has to other systems."""
         return {c: c.destination_system() for c in self.contents().of_type(Jump)}
@@ -83,9 +93,17 @@ class System(Entity):
 
     def region(self) -> str:
         """The name of the region this system is in, extracted from the infocard."""
-        *_, rest = self.infocard('rdl').partition('<TRA data="1" mask="1" def="-2"/><TEXT>')
+        *_, rest = self.infocard('rdl').partition('<JUST loc="center"/><TEXT>')
         region, *_ = rest.partition('</TEXT>')
         return region.title() if region else 'Unknown'
+
+    def mineable_commodities(self) -> EntitySet[Commodity]:
+        result = set()
+        for zone in self.zones():
+            for asteroid in zone.asteroids():
+                for commodity in asteroid.mineable_commodities():
+                    result.add(commodity)
+        return EntitySet(result)
 
 
 class Base(Entity):
@@ -113,64 +131,71 @@ class Base(Entity):
         """The mission base entry for this base."""
         return missions.get_mbases().get(self.nickname)
 
-    def bribes(self):
+    @cached
+    def bribes(self) -> EntitySet[Faction]:
         """The bribes offered on this base."""
-        if self.mbase():
-            npcs = self.mbase().npcs
-            bribes = [npc.bribe if type(npc.bribe) == list else [npc.bribe] for npc in npcs]
-            factions = []
-            bribes = [elem for sublist in bribes for elem in sublist]
-            bribes = list(filter(None, bribes))
-            for faction in bribes:
-                try:
-                    factions.append(faction[0])
-                except KeyError:
-                    pass
-            factions = list(dict.fromkeys(factions))
-            facts = []
-            for x in factions:
-                try:
-                    facts.append(routines.get_factions()[x])
-                except KeyError:
-                    pass
-            return EntitySet(facts)
-    
-    def missions(self):
-        """The factions offering missions on this base."""
-        factions = []
-        if self.mbase():
-            for faction in self.mbase().factions:
-                    if faction.mission_type and type(faction.faction) != list:
-                        factions.append(faction.faction)
-                    elif faction.mission_type:
-                        for fact, offers in zip(faction.faction, faction.offers_missions):
-                            if offers:
-                                factions.append(fact)
-        return EntitySet(routines.get_factions()[x] for x in factions)
+        if not self.mbase():
+            return EntitySet()
+        npcs = self.mbase().npcs
+        bribes = [npc.bribe if type(npc.bribe) == list else [npc.bribe] for npc in npcs]
+        factions = set()
+        bribes = [elem for sublist in bribes for elem in sublist]
+        bribes = list(filter(None, bribes))
+        for faction in bribes:
+            if faction:
+                factions.add(faction[0])
+        facts = set()
+        for x in factions:
+            try:
+                facts.add(routines.get_factions()[x])
+            except KeyError:
+                pass
+        return EntitySet(facts)
 
+    @cached
+    def missions(self) -> EntitySet[Faction]:
+        """The factions offering missions on this base."""
+        factions = set()
+        if not self.mbase():
+            return EntitySet()
+        for faction in self.mbase().factions:
+            if not faction.mission_type:
+                continue
+            if type(faction.faction) != list:
+                factions.add(routines.get_factions()[faction.faction])
+            elif faction.mission_type:
+                for fact, offers in zip(faction.faction, faction.offers_missions):
+                    if offers:
+                        factions.add(routines.get_factions()[fact])
+        return EntitySet(factions)
+
+    @cached
     def factions(self) -> list:
         """All factions present on this base"""
-        if self.mbase():
-            return EntitySet(routines.get_factions()[fact.faction] for fact in [entry for entry in self.mbase().factions])
- 
+        if not self.mbase():
+            return EntitySet()
+        return EntitySet(routines.get_factions()[fact.faction] for fact in self.mbase().factions)
+
+    @cached
     def rumors(self, markup='html') -> Dict[str, Set[str]]:
         """All rumors offered on this base, of the form {faction -> rumors}"""
         lookup = self._markup_formats[markup]
-        if self.mbase():
-            rumors = defaultdict(set)
-            npcs = self.mbase().npcs
+        if not self.mbase():
+            return {}
+        rumors = defaultdict(set)
+        npcs = self.mbase().npcs
 
-            for npc in npcs:
-                if npc.rumor:
-                    if type(npc.rumor) is not list:
-                        npc.rumor = [npc.rumor]
-                    
-                    rumors[routines.get_factions()[npc.affiliation]].update(
-                        lookup(rumor_id) for *_, rumor_id in npc.rumor
-                    )
-            return dict(rumors)
-        return {}
+        for npc in npcs:
+            if npc.rumor:
+                if type(npc.rumor) is not list:
+                    npc.rumor = [npc.rumor]
 
+                rumors[routines.get_factions()[npc.affiliation]].update(
+                    lookup(rumor_id) for *_, rumor_id in npc.rumor
+                )
+        return dict(rumors)
+
+    @cached
     def news(self):
         """A list of all news items being shown on this base"""
         return missions.get_news().get(self.nickname, [])
@@ -188,7 +213,7 @@ class Base(Entity):
     def market(self):
         return routines.get_markets()[self]
 
-    def sells(self) -> Dict['Good', int]:
+    def sells(self) -> Dict[Good, int]:
         """The goods this base sells, of the form {good -> price}."""
         return self.market()[True]
 
@@ -196,22 +221,25 @@ class Base(Entity):
         """The goods this base buys, of the form {good -> price}"""
         return self.market()[False]
 
+    @cached
     def sells_commodities(self) -> Dict[Commodity, int]:
         """The commodities represented by the goods this base sells, mapped to their prices."""
         return {good.commodity(): price for good, price in self.sells().items() if isinstance(good, CommodityGood)}
 
+    @cached
     def buys_commodities(self) -> Dict[Commodity, int]:
         """The commodities represented by the goods this base buys, mapped to their prices."""
         return {good.commodity(): price for good, price in self.buys().items() if isinstance(good, CommodityGood)}
 
+    @cached
     def sells_equipment(self) -> Dict[Equipment, int]:
         """The equipment represented by the goods this base sells, mapped to their prices."""
         return {good.equipment_(): price for good, price in self.sells().items() if type(good) is EquipmentGood}
 
+    @cached
     def sells_ships(self) -> Dict[Ship, int]:
         """The ships represented by the goods this base sells, mapped to their cost."""
         return {good.ship(): good.cost() for good in self.sells() if isinstance(good, ShipPackage)}
-
 
 class Faction(Entity):
     """A faction, also known as a group, is an organisation in the Freelancer universe, possibly owning bases or
@@ -227,6 +255,7 @@ class Faction(Entity):
         """All bases owned by this faction."""
         return EntitySet(base for base in routines.get_bases() if base.has_solar() and base.solar().reputation == self.nickname)
 
+    @cached
     def rep_sheet(self) -> Dict['Faction', float]:
         """How this faction views other factions - its reputation sheet."""
         factions = routines.get_factions()
@@ -244,6 +273,7 @@ class Faction(Entity):
         """The legality of this faction as defined in its FactionProps entry (Lawful or Unlawful)."""
         return self.props().legality.capitalize()
 
+    @cached
     def ships(self) -> EntitySet[Ship]:
         """All ships this faction uses, as defined in faction_props.ini"""
         result = []
@@ -255,6 +285,7 @@ class Faction(Entity):
 
         return EntitySet(result)
 
+    @cached
     def bribes(self) -> EntitySet[Base]:
         """EntitySet of bases that offer bribes/rep hacks for this faction"""
         result = set()
@@ -269,14 +300,15 @@ class Faction(Entity):
 
         return EntitySet(result)
 
-    def rumors(self) -> dict:
+    @cached
+    def rumors(self) -> dict[Base, dict[str, set[str]]]:
         """All rumors this faction offers mapped to the bases they are offered on"""
         result = {}
         for base in routines.get_bases():
             try:
                 if base.has_solar():
                     if self in base.rumors().keys():
-                        result[base.nickname] = base.rumors()[self]
+                        result[routines.get_bases()[base.nickname]] = base.rumors()[self]
             except AttributeError:
                 pass
 

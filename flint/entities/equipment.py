@@ -20,10 +20,14 @@ simplify and optimise instantiation logic. So, for example, subtypes of
 Gun could be Missile and Turret, but instead you should determine if a
 Gun instance is one of these by checking its attributes.
 """
+
+from __future__ import annotations
+
+from flint import cached
 from typing import Dict, Optional, Tuple, cast
 import math
 
-from . import Entity
+from . import Entity, EntitySet
 from .. import routines, interface
 from ..formats import ini
 from PIL import Image
@@ -32,6 +36,7 @@ from io import BytesIO
 
 class Equipment(Entity):
     """Abstract class for something which can be mounted on a ship or carried in its hold."""
+
     lootable: bool = False
 
     def icon(self) -> bytes:
@@ -42,11 +47,15 @@ class Equipment(Entity):
         image = Image.open(BytesIO(self.icon()))
         image.show()
 
-    def good(self) -> Optional['Good']:
+    @cached
+    def good(self) -> Optional[Good]:
         """The good entity for this piece of equipment."""
-        return routines.get_goods().of_type(EquipmentGood).unique(equipment=self.nickname)
+        return (
+            routines.get_goods().of_type(EquipmentGood).unique(equipment=self.nickname)
+        )
 
-    def sold_at(self) -> Dict['Base', int]:
+    @cached
+    def sold_at(self) -> Dict[Base, int]:
         """A dict of bases that sell this good of the form {base: price}. All bases buy equipment."""
         return self.good().sold_at() if self.good() else {}
 
@@ -59,21 +68,33 @@ class Equipment(Entity):
         do not have goods, rendering this method meaningless for them."""
         return self.good() is not None
 
+    @cached
+    def wrecks(self) -> EntitySet[Wreck]:
+        """The wrecks this piece of equipment can be found in"""
+        result = set()
+        for wreck in routines.get_wrecks():
+            if self in wreck.loot().keys():
+                result.add(wreck)
+        return EntitySet(result)
+
 
 class Mountable(Equipment):
     """Abstract class for a piece of equipment that is mountable."""
+
     volume: int = 0  # volume of one unit in ship's cargo bay
 
 
 class External(Mountable):
     """Abstract class for a piece of mountable equipment that is externally mounted, and therefore typically
     destructible."""
+
     hit_pts: int
 
 
 # equipment typically defined in weapon_equip.ini
 class Weapon(External):
     """Abstract class for a piece of external equipment that is a weapon."""
+
     refire_delay: float
     projectile_archetype: str
 
@@ -89,22 +110,25 @@ class Weapon(External):
         """Shield damage dealt per shot."""
         raise NotImplementedError
 
-    def projectile(self) -> 'Projectile':
+    def projectile(self) -> "Projectile":
         """The Projectile fired or dropped by this weapon."""
         return routines.get_equipment().get(self.projectile_archetype)
 
 
 class Gun(Weapon):
     """A gun that goes 'pew'. Not much to be said."""
+
     power_usage: float
     muzzle_velocity: int
     projectile_archetype: str
     hp_gun_type: Optional[str] = None  # NPC guns lack this field
     dispersion_angle: float = 0.0
-    dry_fire_sound: Optional[str] = None  # only missiles (and mine droppers, but they're a different class) have this
-    auto_turret: bool  # only turrets have this
+    dry_fire_sound: Optional[str] = (
+        None  # only missiles (and mine droppers, but they're a different class) have this
+    )
+    auto_turret: Optional[bool] = None  # only turrets have this
 
-    def munition(self) -> Optional['Munition']:
+    def munition(self) -> Optional["Munition"]:
         """The Munition fired by this weapon."""
         return cast(Munition, self.projectile())
 
@@ -132,14 +156,22 @@ class Gun(Weapon):
 
     def efficiency(self) -> float:
         """Energy consumption per second (i.e. power).."""
-        return ((self.hull_damage() + self.shield_damage()) / self.power_usage) if self.power_usage else 0.0
+        return (
+            ((self.hull_damage() + self.shield_damage()) / self.power_usage)
+            if self.power_usage
+            else 0.0
+        )
 
     def rating(self) -> float:
         """FLStat rating"""
         if self.price() == 0:
             return 0
-        
-        value = self.hull_dps() / self.price() * 1000 if self.hull_dps() > self.shield_dps() else self.shield_dps() / self.price() * 1000
+
+        value = (
+            self.hull_dps() / self.price() * 1000
+            if self.hull_dps() > self.shield_dps()
+            else self.shield_dps() / self.price() * 1000
+        )
         return self.efficiency() * value
 
     def technology(self) -> Optional[str]:
@@ -157,17 +189,25 @@ class Gun(Weapon):
     def is_missile(self) -> bool:
         """Whether the gun is a missile/torpedo launcher. Another, much slower, way to test this would be to check
         if the gun's munition has a "motor" field."""
-        return bool(self.dry_fire_sound) or self.munition().cruise_disruptor is not None or 'Torpedo' in self.name()
+        return (
+            bool(self.dry_fire_sound)
+            or self.munition().cruise_disruptor is not None
+            or "Torpedo" in self.name()
+        )
 
     def is_turret(self) -> bool:
         """Whether the gun is a turret."""
-        return self.auto_turret or (self.hp_gun_type and 'turret' in self.hp_gun_type) or 'Turret' in self.name()
+        return (
+            self.auto_turret == True
+            or (self.hp_gun_type and "turret" in self.hp_gun_type)
+            or "Turret" in self.name()
+        )
 
 
 class MineDropper(Weapon):
     """A dispenser for mines."""
 
-    def mine(self) -> Optional['Mine']:
+    def mine(self) -> Optional["Mine"]:
         """The Mine dropped by this weapon."""
         return cast(Mine, self.projectile())
 
@@ -187,28 +227,33 @@ class CloakingDevice(External):
 
 class Projectile(Equipment):
     """Abstract. A projectile fired or dropped by a Weapon."""
-    lifetime: float  # time in seconds that the projectile lingers in space before despawning
+
+    lifetime: Optional[float] = (
+        None  # time in seconds that the projectile lingers in space before despawning
+    )
 
 
 class Mine(Projectile):
     """An explosive mine that can be dropped into space."""
+
     explosion_arch: str  # nickname of Explosion
     seek_dist: int
     top_speed: int
     acceleration: int
-    ammo_limit: int
+    ammo_limit: Optional[int] = None
 
     def name(self):
         """Add "(Ammo)" to the end of the name to distinguish from the weapon it's used for"""
         return self.name_() + " (Ammo)"
 
-    def explosion(self) -> Optional['Explosion']:
+    def explosion(self) -> Optional["Explosion"]:
         """The Explosion triggered by this mine."""
         return routines.get_equipment().get(self.explosion_arch)
 
 
 class Munition(Projectile):
     """A projectile fired by a Weapon."""
+
     hp_type: str
     hull_damage: int = 0
     energy_damage: int = 0
@@ -224,9 +269,13 @@ class Munition(Projectile):
         """Add "(Ammo)" to the end of the name to distinguish from the weapon it's used for"""
         return self.name_() + " (Ammo)"
 
-    def explosion(self) -> Optional['Explosion']:
+    def explosion(self) -> Optional["Explosion"]:
         """The Explosion triggered by this munition."""
-        return routines.get_equipment().get(self.explosion_arch) if self.explosion_arch else None
+        return (
+            routines.get_equipment().get(self.explosion_arch)
+            if self.explosion_arch
+            else None
+        )
 
     def hull_damage_(self) -> int:
         """The hull damage inflicted by this munition, taking into consideration its explosion."""
@@ -242,19 +291,21 @@ class Munition(Projectile):
         except AttributeError:
             return 0
 
-    def motor_(self) -> Optional['Motor']:
+    def motor_(self) -> Optional["Motor"]:
         """This Munition's Motor."""
         return routines.get_equipment().get(self.motor) if self.motor else None
 
 
 class Motor(Projectile):
     """A missile motor."""
+
     accel: int
     delay: int
 
 
 class Explosion(Projectile):
     """A very strange thing to call equipment, whatever way you look at it, yet defined in weapon_equip."""
+
     lifetime: Tuple[int, int]
     radius: int
     hull_damage: int
@@ -265,6 +316,7 @@ class Explosion(Projectile):
 # equipment typically defined in st_equip.ini
 class Thruster(External):
     """A thruster that provides supplementary acceleration and velocity to the main engine."""
+
     power_usage: float
     max_force: float
     explosion_resistance: float
@@ -275,36 +327,41 @@ class Thruster(External):
 
 class ShieldGenerator(External):
     """A piece of equipment that generates a shield bubble around a ship which absorbs damage from weapon fire."""
-    shield_type: str = ''  # the shield's technology type
-    max_capacity: float
+
+    shield_type: str = ""  # the shield's technology type
+    max_capacity: Optional[float] = None
     explosion_resistance: float = 0.0
-    regeneration_rate: float
-    offline_rebuild_time: int
-    offline_threshold: float
-    constant_power_draw: int
-    rebuild_power_draw: int
+    regeneration_rate: Optional[float] = None
+    offline_rebuild_time: Optional[int] = None
+    offline_threshold: Optional[float] = None
+    constant_power_draw: Optional[int] = None
+    rebuild_power_draw: Optional[int] = None
 
 
 # equipment typically defined in misc_equip.ini
 class Power(Mountable):
     """A ship's power plant."""
+
     capacity: int
     charge_rate: int
 
 
 class Tractor(Mountable):
     """A tractor beam generator."""
+
     max_length: int  # range of beam in M
 
 
 class Scanner(Mountable):
     """A scanner, akin to a radar transmitter/receiver."""
+
     range: int  # maximum contact acquisition range in M
     cargo_scan_range: int  # maximum cargo scan range in M
 
 
 class CounterMeasure(Equipment):
     """A countermeasure that can be deployed against seeking missiles."""
+
     lifetime: float
     range: int
     diversion_pctg: float
@@ -317,10 +374,11 @@ class CounterMeasure(Equipment):
 
 class CounterMeasureDropper(Weapon):
     """A countermeasure dispenser."""
+
     refire_delay: float
     power_usage: float
 
-    def countermeasure(self) -> Optional['CounterMeasure']:
+    def countermeasure(self) -> Optional["CounterMeasure"]:
         """The CounterMeasure launched by this dropper."""
         return routines.get_equipment().get(self.projectile_archetype)
 
@@ -336,6 +394,7 @@ class ShieldBattery(Equipment):
 # equipment typically defined in engine_equip.ini
 class Engine(Mountable):
     """A reaction engine that must be mounted to a ship to provide propulsion."""
+
     cruise_charge_time: int
     cruise_speed: Optional[int] = 0
     reverse_fraction: float
@@ -343,13 +402,17 @@ class Engine(Mountable):
     max_force: float
 
     def cruise_speed_(self):
-        return  self.cruise_speed if self.cruise_speed != 0 else \
-                interface.get_constants()["engineequipconsts"]["cruising_speed"] 
-    
+        return (
+            self.cruise_speed
+            if self.cruise_speed != 0
+            else interface.get_constants()["engineequipconsts"]["cruising_speed"]
+        )
+
 
 # equipment typically defined in select_equip.ini
 class Armor(Mountable):
     """An armour upgrade."""
+
     hit_pts_scale: float  # multiplier applied to ship hull hit points when mounted
 
 
@@ -360,6 +423,7 @@ class CargoPod(Mountable):
 class Commodity(Equipment):
     """A Commodity is a tradeable piece of "equipment". Unlike other forms of equipment, commodities can typically
     be bought and sold for variable amounts on different bases."""
+
     decay_per_second: int
     volume: int  # volume of one unit in ship's cargo bay
 
@@ -367,12 +431,16 @@ class Commodity(Equipment):
         pass
 
     def highest_price(self):
-        return sorted(self.bought_at().items(), key=lambda item:item[1])[-1]
+        return sorted(self.bought_at().items(), key=lambda item: item[1])[-1]
 
-    def bought_at(self) -> Dict['Base', int]:
+    def bought_at(self) -> Dict["Base", int]:
         """A dict of bases that buy this commodity of the form {base: price}."""
         return self.good().bought_at()
 
+    @cached
+    def mineable_in(self):
+        """The systems in which this commodity can be mined"""
+        return EntitySet(system for system in routines.get_systems() if self in system.mineable_commodities())
 
 
 from .goods import Good, EquipmentGood

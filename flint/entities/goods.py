@@ -5,6 +5,7 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """
+from __future__ import annotations
 from typing import Dict, List, Tuple, Optional, cast
 
 from dataclassy import Internal
@@ -28,21 +29,24 @@ class Good(Entity):
 
     def icon(self) -> bytes:
         """This good's icon in TGA format."""
-        return utf.extract(self.icon_path(), 'MIP0')
+        try:
+            return utf.extract(self.icon_path(), 'MIP0')
+        except KeyError:
+            return utf.extract(self.icon_path(), "MIPS")
 
-    def market(self) -> Dict[bool, Dict['Base', int]]:
+    def market(self) -> Dict[bool, Dict[Base, int]]:
         """The market for this Good, i.e. the Bases it is bought and sold on and their prices."""
         return routines.get_markets()[self]
 
-    def sold_at(self) -> Dict['Base', int]:
+    def sold_at(self) -> Dict[Base, int]:
         """A dict of bases that sell this good of the form {base_nickname: price}."""
         return self.market()[True]
 
-    def bought_at(self) -> Dict['Base', int]:
+    def bought_at(self) -> Dict[Base, int]:
         """A dict of bases that buy this good of the form {base_nickname: price}."""
         return {**self.market()[False], **self.sold_at()}
 
-    def price_at(self, base: 'Base') -> int:
+    def price_at(self, base: Base) -> int:
         return self.bought_at()[base]
 
     DEFAULT_ICON = 'EQUIPMENT/MODELS/COMMODITIES/NN_ICONS/blank.3db'
@@ -53,7 +57,7 @@ class EquipmentGood(Good):
     equipment: str  # nickname of the good this equipment represents.
     combinable: bool
 
-    def equipment_(self) -> 'Equipment':
+    def equipment_(self) -> Equipment:
         """The Equipment entity this good refers to."""
         return routines.get_equipment().get(self.equipment)
 
@@ -65,7 +69,7 @@ class CommodityGood(EquipmentGood):
     bad_sell_price: float
     good_buy_price: float
 
-    def commodity(self) -> 'Commodity':
+    def commodity(self) -> Commodity:
         """The Commodity entity this good refers to."""
         return cast(Commodity, self.equipment_())
 
@@ -74,7 +78,7 @@ class ShipHull(Good):
     """The hull of a ship, meaning a ship with no equipment mounted."""
     ship: str  # nickname of a Ship
 
-    def ship_(self) -> 'Ship':
+    def ship_(self) -> Ship:
         """The Ship that uses this hull."""
         return routines.get_ships().get(self.ship)
 
@@ -91,7 +95,7 @@ class ShipPackage(Good):
         """The ShipHull entity of this package's hull."""
         return routines.get_goods()[self.hull]
 
-    def ship(self) -> 'Ship':
+    def ship(self) -> Ship:
         """The Ship this package represents."""
         return self.hull_().ship_()
 
@@ -101,7 +105,7 @@ class ShipPackage(Good):
         ("addons")."""
         return self.hull_().price + sum(e.price() for e in self.equipment())
 
-    def equipment(self) -> EntitySet['Equipment']:
+    def equipment(self) -> EntitySet[Equipment]:
         """The set of equipment included in this package."""
         equipment = routines.get_equipment()
         return EntitySet(equipment[n] for n, *_ in self.addon if n in equipment)

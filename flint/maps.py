@@ -7,6 +7,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 Functions for working with Freelancer's system layouts and navmaps.
 """
+from dataclassy import dataclass
 from typing import Any, Dict, Hashable, List
 from collections import namedtuple
 import math
@@ -17,6 +18,9 @@ from . import cached
 PosVector = namedtuple('pos', 'x y z')
 RotVector = namedtuple('rot', 'x y z')
 
+class PosVector(PosVector):
+    def distance(self, other: PosVector) -> float:
+        return math.hypot(self.x - other.x, self.y - other.y, self.z - other.z)
 
 def pos_to_sector(pos: PosVector, navmap_scale: float, divider='-', subdivider='/') -> str:
     """Convert a position vector (e.g. (-45000, 0, 75000)) into a navmap sector coordinate (e.g. 'D-5')."""
@@ -93,7 +97,6 @@ def dijkstra(graph: Dict[Any, Dict[Any, int]], start: Hashable, end: Hashable) -
         except KeyError:  # no path exists
             return []
     return list(reversed(path))
-
 
 NAVMAP_X_LABELS = tuple(chr(x) for x in range(ord('A'), ord('H') + 1))
 NAVMAP_Z_LABELS = tuple(str(x) for x in range(1, 9))

@@ -10,14 +10,17 @@ well as the logic that Freelancer uses to map those resources to
 internal IDs. Additionally it implements conversion from RDL (used
 for rich-text strings) to HTML.
 """
+from __future__ import annotations
+
 from typing import Dict
 from os import SEEK_CUR
 import warnings
+import json
 
 import deconstruct as c
 
 from ..interface import rdl_to_html, rdl_to_plaintext
-from .. import cached
+from .. import cached, invalidate_specific_cache
 from .. import paths
 from . import WinStruct
 
@@ -27,8 +30,10 @@ resource_table: Dict[int, Dict[int, str]] = {}
 @cached
 def lookup(resource_id: int) -> str:
     """Looks up the text associated with a resource ID (string or HTML) in the resource dlls."""
-    if resource_id is None:  # sometimes objects which should have infocards don't. Freelancer doesn't seem to care
-        return ''
+    if (
+        resource_id is None
+    ):  # sometimes objects which should have infocards don't. Freelancer doesn't seem to care
+        return ""
 
     # all references to string/html resources in the inis (strid or ids_info) use "external ids" which are based off the
     # positions of the dlls in Freelancer.ini/[Resources]
@@ -36,16 +41,27 @@ def lookup(resource_id: int) -> str:
     external_id_offset = dll_no * 65536  # the external id of position 0 in the dll
 
     if dll_no not in paths.dlls:  # likewise
-        return ''
+        return ""
 
     # if dll has already been loaded
     if dll_no in resource_table:
-        return resource_table[dll_no].get(resource_id, '')  # a resource id that maps to nothing is also an empty string
+        return resource_table[dll_no].get(
+            resource_id, ""
+        )  # a resource id that maps to nothing is also an empty string
 
     # otherwise, load in the new dll, and call again
     dll_path = paths.dlls[dll_no]
     resource_table[dll_no] = parse(dll_path, external_id_offset)
     return lookup(resource_id)
+
+
+def override_resource(resource_id: int, new_resource: str) -> None:
+    dll_no = resource_id // 65536
+    invalidate_specific_cache(lookup)
+    if not dll_no in resource_table:
+        lookup(resource_id)
+
+    resource_table[dll_no][resource_id] = new_resource
 
 
 @cached
@@ -62,7 +78,8 @@ def lookup_as_plain(resource_id: int) -> str:
 
 def dump_all() -> Dict[int, str]:
     """Read all string resources from all DLLs.
-    This is a bit hacky Look up the first resource in each DLL to force the file to be lazy-loaded."""
+    This is a bit hacky Look up the first resource in each DLL to force the file to be lazy-loaded.
+    """
     result = {}
     for i in paths.dlls:
         lookup_as_html(i * 65536)
@@ -70,24 +87,30 @@ def dump_all() -> Dict[int, str]:
     return result
 
 
-def dump_all_to_file(filename: str = 'infocards.txt'):
+def dump_all_to_file(filename: str = "infocards.txt", format: str = "FLInfocardIE"):
     """Dump all string resources to a text file in an identical format to that produced by FLInfocardIE."""
     resources = dump_all()
-    pairs = (f'{id_}\n{text.strip()}\n' for id_, text in resources.items())
-    with open(filename, 'w', encoding="utf-8") as f:
+    if format.lower() == "flinfocardie":
+        pairs = (f"{id_}\n{text.strip()}\n" for id_, text in resources.items())
+    elif format.lower() == "json":
+        pairs = json.dumps(resources, indent=1)
+    with open(filename, "w", encoding="utf-8") as f:
         f.writelines(pairs)
 
 
 def parse(path: str, external_strid_offset: int = 0) -> Dict[int, str]:
     """Read the DLL at the given path into a mapping of external ids to string/XML resources.
-    Format reference: <https://docs.microsoft.com/en-gb/windows/win32/debug/pe-format>"""
+    Format reference: <https://docs.microsoft.com/en-gb/windows/win32/debug/pe-format>
+    """
 
     def read_rdt(entry_count: int):
         """Read the entries in a resource directory table starting at the file cursor."""
         rdt_entries = {}
         for e in range(entry_count):
             entry = ResourceDirectoryEntry(f.read(8))
-            rdt_entries[entry.IntegerID] = entry.Offset & 0x7FFFFFFF  # only interested in lower 31 bits
+            rdt_entries[entry.IntegerID] = (
+                entry.Offset & 0x7FFFFFFF
+            )  # only interested in lower 31 bits
         return rdt_entries
 
     def read_string_table():
@@ -98,19 +121,21 @@ def parse(path: str, external_strid_offset: int = 0) -> Dict[int, str]:
             if resource_string.Length:
                 strid = (name - 1) * 16 + s + external_strid_offset
                 try:
-                    text = f.read(resource_string.Length * 2).decode('utf-16')
+                    text = f.read(resource_string.Length * 2).decode("utf-16")
                 except UnicodeDecodeError as e:
-                    warnings.warn(f'String resource (strid: {strid}) has invalid UTF-16: {e}')
-                    text = ''
+                    warnings.warn(
+                        f"String resource (strid: {strid}) has invalid UTF-16: {e}"
+                    )
+                    text = ""
                 string_table[strid] = text
         return string_table
 
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         # read PE signature
         f.seek(0x3C)  # find offset to signature
         pe_signature_offset = ord(f.read(1))
         f.seek(pe_signature_offset)
-        assert f.read(4) == b'PE\0\0'
+        assert f.read(4) == b"PE\0\0"
 
         # read COFF header, which begins immediately after PE signature
         coff = CoffHeader(f.read(20))
@@ -120,11 +145,11 @@ def parse(path: str, external_strid_offset: int = 0) -> Dict[int, str]:
         # go through section headers to find .rsrc
         for i in range(coff.NumberOfSections):
             section = SectionHeader(f.read(40))
-            if section.Name.rstrip(b'\0') == b'.rsrc':
+            if section.Name.rstrip(b"\0") == b".rsrc":
                 rsrc_offset = section.PointerToRawData
                 break
         else:
-            raise EOFError('.rsrc section not found')
+            raise EOFError(".rsrc section not found")
 
         # read Resource Directory Table header for .rsrc section
         f.seek(rsrc_offset)
@@ -133,11 +158,16 @@ def parse(path: str, external_strid_offset: int = 0) -> Dict[int, str]:
         # remember that named entries precede ids
 
         # read type directory entries. For types, only ids are used, not string names
-        resource_types = read_rdt(resource_directory_table.IdEntryCount)  # resource types to offsets
+        resource_types = read_rdt(
+            resource_directory_table.IdEntryCount
+        )  # resource types to offsets
 
         # for each resource type, read its name table
         name_offsets = {}
-        for resource_type, name_table_offset in resource_types.items():  # for each data type
+        for (
+            resource_type,
+            name_table_offset,
+        ) in resource_types.items():  # for each data type
             f.seek(name_table_offset + rsrc_offset)
             name_entries = ResourceDirectoryTable(f.read(16))
             name_offsets[resource_type] = read_rdt(name_entries.IdEntryCount)
@@ -152,23 +182,29 @@ def parse(path: str, external_strid_offset: int = 0) -> Dict[int, str]:
                 f.seek(rsrc_offset + data_section.PointerToRawData)  # jump there
 
                 # read Resource Data Entry
-                data = ResourceDataEntry(f.read(16))  # could also get codepage int here ?
-                f.seek(data.DataRVA)
+                data = ResourceDataEntry(
+                    f.read(16)
+                )  # could also get codepage int here ?
+                #f.seek(data.DataRVA)
 
                 if resource_type == RT_STRING:
                     resources.update(read_string_table())
                 elif resource_type == RT_HTML:
                     strid = name + external_strid_offset
                     try:
-                        text = f.read(data.Size).decode('utf-16')
+                        text = f.read(data.Size).decode("utf-16")
                     except UnicodeDecodeError as e:
-                        warnings.warn(f'XML resource (ids: {strid}, {path}:{name}) has invalid UTF-16: {e}')
-                        text = ''
+                        warnings.warn(
+                            f"XML resource (ids: {strid}, {path}:{name}) has invalid UTF-16: {e}"
+                        )
+                        text = ""
                     resources[strid] = text
                 elif resource_type == RT_VERSION:
                     pass
                 else:
-                    warnings.warn(f'Unexpected resource type ({hex(resource_type)}) in file {path!r}, name {name}')
+                    warnings.warn(
+                        f"Unexpected resource type ({hex(resource_type)}) in file {path!r}, name {name}"
+                    )
         return resources
 
 
@@ -213,7 +249,9 @@ class ResourceDirectoryTable(WinStruct):
 
 class ResourceDirectoryEntry(WinStruct):
     IntegerID: c.int32
-    Offset: c.int32  # if MSB is 0, this is the address of a leaf RDE. If 1, lower bits are the RDT one level down
+    Offset: (
+        c.int32
+    )  # if MSB is 0, this is the address of a leaf RDE. If 1, lower bits are the RDT one level down
 
 
 class ResourceDataEntry(WinStruct):
