@@ -14,7 +14,7 @@ flint explicitly supports vanilla Freelancer and [Discovery Freelancer](https://
 Install the latest development version straight from this repository:
 
 ```sh
-pip install https://github.com/san-e/flint/archive/wiki.zip -U
+pip install https://github.com/san-e/flint/archive/master.zip -U
 ```
 
 Built wheels are also available under [Releases](https://github.com/biqqles/flint/releases), as is a changelog.
