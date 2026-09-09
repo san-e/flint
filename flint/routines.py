@@ -8,6 +8,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 This file contains routines for parsing specific sets of information
 from the game files. All exported functions return EntitySets.
 """
+from __future__ import annotations
+
 from flint.entities import Asteroids, Nebula
 from typing import Dict, Union
 from collections import defaultdict

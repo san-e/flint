@@ -10,6 +10,8 @@ to the MISSIONS directory. These "things" aren't quite entities, as
 they lack associated string resource fields and/or nicknames.
 Instead they "belong to" a composite Entity, like a Base or Faction.
 """
+from __future__ import annotations
+
 from typing import Tuple, List, Dict, Optional
 from collections import defaultdict
 

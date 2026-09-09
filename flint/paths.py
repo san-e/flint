@@ -7,6 +7,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 This module provides utilities for working with Freelancer's paths.
 """
+from __future__ import annotations
+
 from typing import Dict, Tuple, Optional
 import os
 

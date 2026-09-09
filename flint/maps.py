@@ -7,6 +7,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 Functions for working with Freelancer's system layouts and navmaps.
 """
+from __future__ import annotations
+
 from dataclassy import dataclass
 from typing import Any, Dict, Hashable, List
 from collections import namedtuple
